@@ -1,12 +1,12 @@
-#include <cstdint>
-#include <elf.h>
-#include <sys/types.h>
-#include <vector>
-#include <fstream>
-#include <iterator>
 #include <array>
 #include <cassert>
-
+#include <cstdint>
+#include <cstring>
+#include <elf.h>
+#include <fstream>
+#include <iterator>
+#include <sys/types.h>
+#include <vector>
 
 std::vector<uint8_t> readFile(const char *const filename) {
   // open the file:
@@ -32,51 +32,63 @@ std::vector<uint8_t> readFile(const char *const filename) {
   return vec;
 }
 
-int main(int argc, char* argv[]){
+void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr> const &debugLines) {
+  for (Elf32_Shdr const &hdr : debugLines) {
+  }
+}
 
-    if(argc<2){
-        return 1;
-    }
-    
-    std::vector<uint8_t> fileBytes = readFile(argv[1]);
+int main(int argc, char *argv[]) {
 
-    std::array<uint8_t, EI_NIDENT> elf32Magic = {0x7f, 0x45, 0x4c, 0x46, 01, 01, 01, 00, 00 ,00, 00, 00 ,00 ,00, 00, 00};
+  if (argc < 2) {
+    return 1;
+  }
 
+  std::vector<uint8_t> fileBytes = readFile(argv[1]);
 
-    Elf32_Ehdr* elf32Header = reinterpret_cast<Elf32_Ehdr*>(fileBytes.data());
+  std::array<uint8_t, EI_NIDENT> elf32Magic = {0x7f, 0x45, 0x4c, 0x46, 01, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00};
 
-    for(uint16_t i = 0;i<elf32Magic.size();i++){
-      if(elf32Magic[i]!=elf32Header->e_ident[i]){
-        printf("file is not a valid elf32\n");
-        exit(1);
-      }
-    }
+  Elf32_Ehdr *elf32Header = reinterpret_cast<Elf32_Ehdr *>(fileBytes.data());
 
-    const uint32_t sectionHeaderOffset = elf32Header->e_shoff;
-    const uint32_t sectionHeaderSize = elf32Header->e_shentsize;
-    const uint32_t numberOfSectionHeaders = elf32Header->e_shnum;
-
-    if(sectionHeaderSize != sizeof( Elf32_Shdr)){
-      printf("wrong section header size\n");
+  for (uint16_t i = 0; i < elf32Magic.size(); i++) {
+    if (elf32Magic[i] != elf32Header->e_ident[i]) {
+      printf("file is not a valid elf32\n");
       exit(1);
     }
+  }
 
-    Elf32_Shdr* sectionHeaderStart = reinterpret_cast<Elf32_Shdr*>(fileBytes.data() + sectionHeaderOffset);
+  const uint32_t sectionHeaderOffset = elf32Header->e_shoff;
+  const uint32_t sectionHeaderSize = elf32Header->e_shentsize;
+  const uint32_t numberOfSectionHeaders = elf32Header->e_shnum;
 
-    Elf32_Shdr* stringTable = sectionHeaderStart + numberOfSectionHeaders-1U;
+  if (sectionHeaderSize != sizeof(Elf32_Shdr)) {
+    printf("wrong section header size\n");
+    exit(1);
+  }
 
-    if(stringTable->sh_type != SHT_STRTAB){
-      printf("string table not found\n");
-      exit(1);
+  Elf32_Shdr *sectionHeaderStart = reinterpret_cast<Elf32_Shdr *>(fileBytes.data() + sectionHeaderOffset);
+
+  Elf32_Shdr *stringTable = sectionHeaderStart + numberOfSectionHeaders - 1U;
+
+  if (stringTable->sh_type != SHT_STRTAB) {
+    printf("string table not found\n");
+    exit(1);
+  }
+
+  std::vector<Elf32_Shdr> debugLines;
+
+  const char *stringContentStart = reinterpret_cast<const char *>(fileBytes.data() + stringTable->sh_offset);
+
+  for (uint32_t i = 0; i < numberOfSectionHeaders; i++) {
+    Elf32_Shdr *currentHeader = sectionHeaderStart + i;
+    const char *sectionName = stringContentStart + currentHeader->sh_name;
+    std::array<char, 12> debugLineName = {".debug_line"};
+    if (strncmp(sectionName, debugLineName.data(), debugLineName.size()) == 0) {
+      debugLines.push_back(*currentHeader);
     }
+    // printf("%s, offset %x, size %x\n",sectionName, currentHeader->sh_offset, currentHeader->sh_size);
+  }
 
-    const char* stringContentStart = reinterpret_cast<const char*>(fileBytes.data() + stringTable->sh_offset);
+  parseDebugLine(fileBytes, debugLines);
 
-    for(uint32_t i = 0;i<numberOfSectionHeaders;i++){
-      Elf32_Shdr* currentHeader = sectionHeaderStart + i;
-      const char* sectionName = stringContentStart + currentHeader->sh_name;
-      printf("%s, offset %x, size %x\n",sectionName, currentHeader->sh_offset, currentHeader->sh_size);
-    }
-
-    return 0;
+  return 0;
 }
