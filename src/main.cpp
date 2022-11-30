@@ -102,12 +102,16 @@ public:
         if (signedInt && ((static_cast<uint32_t>(byte) & static_cast<uint32_t>(static_cast<uint32_t>(1) << (static_cast<uint32_t>(6) - (bitsWritten - maxBits)))) != 0U)) {
           // If it is signed and negative (sign bit set) "1" padding allowed
           uint32_t const bitMask = (static_cast<uint32_t>(0xFF) << ((6U - (bitsWritten - maxBits)) + 1U)) & 0b01111111U;
-          static_cast<void>(bitMask);
+          if ((static_cast<uint32_t>(byte) & bitMask) != bitMask) {
+            throw std::runtime_error("Malformed LEB128 signed integer (Wrong padding)\n");
+          }
 
         } else {
           // Zero padding allowed if unsigned or positive signed integer
-          uint32_t const bitMask = (0xFF << ((6U - (bitsWritten - maxBits)) + 1U)) & 0b01111111U;
-          static_cast<void>(bitMask);
+          uint32_t const bitMask = (0xFFU << ((6U - (bitsWritten - maxBits)) + 1U)) & 0b01111111U;
+          if ((static_cast<uint32_t>(byte) & bitMask) != 0U) {
+            throw std::runtime_error("Malformed LEB128 unsigned integer (Wrong padding)\n");
+          }
         }
       }
     }
@@ -187,8 +191,8 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
     std::vector<uint8_t> standard_opcode_lengths;
 
     for (uint8_t i = 1; i < opcode_base; i++) {
-      uint8_t const opLen = byteReader.getNumber<uint8_t>();
-      standard_opcode_lengths.push_back(opLen);
+      uint8_t const opCodeArgumentLength = byteReader.getNumber<uint8_t>();
+      standard_opcode_lengths.push_back(opCodeArgumentLength);
     }
 
     std::vector<std::string> const include_directories = byteReader.getStringTable();
@@ -221,7 +225,7 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
     } while (true);
 
     int32_t address = 0;
-    int32_t lineNumber = 0;
+    int32_t lineNumber = 1;
     while (!byteReader.reachedEnd()) {
       uint8_t const opCode = byteReader.getNumber<uint8_t>();
 
@@ -235,14 +239,19 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
       } else if (opCode > 0U) { // standard opcode
         std::cout << "standard opcode " << static_cast<uint32_t>(opCode) << ": ";
         assert(opCode < standard_opcode_lengths.size());
-        uint8_t opCodeArgumentLength = standard_opcode_lengths[opCode - 1U];
+        uint8_t const opCodeArgumentLength = standard_opcode_lengths[opCode - 1U];
         StandardOpCode const standardOpcode = static_cast<StandardOpCode>(opCode);
         switch (standardOpcode) {
+        case (StandardOpCode::DW_LNS_advance_pc): {
+          uint64_t const oprand = byteReader.readLEB128(false);
+          addressIncrement = static_cast<int32_t>(oprand) * minimum_instruction_length;
+          break;
+        }
         case (StandardOpCode::DW_LNS_set_column): {
           if (opCodeArgumentLength != 1U) {
             throw std::runtime_error("opCodeArgumentLength mismatch");
           }
-          uint64_t column = byteReader.readLEB128(false);
+          uint64_t const column = byteReader.readLEB128(false);
           std::cout << "set column " << column;
           break;
         }
@@ -258,8 +267,8 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
         uint64_t const commandLength = byteReader.readLEB128(false);
         static_cast<void>(commandLength);
         uint8_t const subOpcode = byteReader.getNumber<uint8_t>();
-        ExtendedOpCode extendedOpCode = static_cast<ExtendedOpCode>(subOpcode);
-        std::cout << "Extended opcode " << static_cast<uint32_t>(opCode) << ": ";
+        ExtendedOpCode const extendedOpCode = static_cast<ExtendedOpCode>(subOpcode);
+        std::cout << "Extended opcode " << static_cast<uint32_t>(subOpcode) << ": ";
         switch (extendedOpCode) {
         default: {
         case (ExtendedOpCode::DW_LNE_end_sequence): {
@@ -277,8 +286,8 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
       }
 
       if (lineIncrement != 0 || addressIncrement != 0) {
-        int32_t newAddress = address + addressIncrement;
-        int32_t newLineNumber = lineNumber + lineIncrement;
+        int32_t const newAddress = address + addressIncrement;
+        int32_t const newLineNumber = lineNumber + lineIncrement;
 
         std::cout << "increase address by " << addressIncrement << " to " << newAddress << " and Line by " << lineIncrement << " to " << newLineNumber;
         address = newAddress;
@@ -296,11 +305,11 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  std::vector<uint8_t> fileBytes = readFile(argv[1]);
+  std::vector<uint8_t> const fileBytes = readFile(argv[1]);
 
-  std::array<uint8_t, EI_NIDENT> elf32Magic = {0x7f, 0x45, 0x4c, 0x46, 01, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00};
+  std::array<uint8_t, EI_NIDENT> const elf32Magic = {0x7f, 0x45, 0x4c, 0x46, 01, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00};
 
-  Elf32_Ehdr *elf32Header = reinterpret_cast<Elf32_Ehdr *>(fileBytes.data());
+  Elf32_Ehdr const *const elf32Header = reinterpret_cast<Elf32_Ehdr const *>(fileBytes.data());
 
   for (uint16_t i = 0; i < elf32Magic.size(); i++) {
     if (elf32Magic[i] != elf32Header->e_ident[i]) {
@@ -318,9 +327,9 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  Elf32_Shdr *sectionHeaderStart = reinterpret_cast<Elf32_Shdr *>(fileBytes.data() + sectionHeaderOffset);
+  Elf32_Shdr const *const sectionHeaderStart = reinterpret_cast<Elf32_Shdr const *>(fileBytes.data() + sectionHeaderOffset);
 
-  Elf32_Shdr *stringTable = sectionHeaderStart + numberOfSectionHeaders - 1U;
+  Elf32_Shdr const *const stringTable = sectionHeaderStart + numberOfSectionHeaders - 1U;
 
   if (stringTable->sh_type != SHT_STRTAB) {
     printf("string table not found\n");
@@ -332,9 +341,9 @@ int main(int argc, char *argv[]) {
   const char *stringContentStart = reinterpret_cast<const char *>(fileBytes.data() + stringTable->sh_offset);
 
   for (uint32_t i = 0; i < numberOfSectionHeaders; i++) {
-    Elf32_Shdr *currentHeader = sectionHeaderStart + i;
-    const char *sectionName = stringContentStart + currentHeader->sh_name;
-    std::array<char, 12> debugLineName = {".debug_line"};
+    Elf32_Shdr const *const currentHeader = sectionHeaderStart + i;
+    const char *const sectionName = stringContentStart + currentHeader->sh_name;
+    std::array<char, 12> const debugLineName = {".debug_line"};
     if (strncmp(sectionName, debugLineName.data(), debugLineName.size()) == 0) {
       debugLines.push_back(*currentHeader);
     }
