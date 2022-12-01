@@ -4,6 +4,7 @@
 #include <cstring>
 #include <elf.h>
 #include <fstream>
+#include <ios>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
@@ -242,9 +243,18 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
         uint8_t const opCodeArgumentLength = standard_opcode_lengths[opCode - 1U];
         StandardOpCode const standardOpcode = static_cast<StandardOpCode>(opCode);
         switch (standardOpcode) {
+        case (StandardOpCode::DW_LNS_copy): {
+          // fixme
+          break;
+        }
         case (StandardOpCode::DW_LNS_advance_pc): {
-          uint64_t const oprand = byteReader.readLEB128(false);
-          addressIncrement = static_cast<int32_t>(oprand) * minimum_instruction_length;
+          uint64_t const operand = byteReader.readLEB128(false);
+          addressIncrement = static_cast<int32_t>(operand) * minimum_instruction_length;
+          break;
+        }
+        case (StandardOpCode::DW_LNS_advance_line): {
+          uint64_t const operand = byteReader.readLEB128(true);
+          lineIncrement = static_cast<int32_t>(operand);
           break;
         }
         case (StandardOpCode::DW_LNS_set_column): {
@@ -253,6 +263,10 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
           }
           uint64_t const column = byteReader.readLEB128(false);
           std::cout << "set column " << column;
+          break;
+        }
+        case (StandardOpCode::DW_LNS_const_add_pc): {
+          addressIncrement = static_cast<int32_t>(((255U - opcode_base) / line_range) * minimum_instruction_length);
           break;
         }
         case (StandardOpCode::DW_LNS_set_epilogue_begin): {
@@ -272,12 +286,15 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
         switch (extendedOpCode) {
         default: {
         case (ExtendedOpCode::DW_LNE_end_sequence): {
-
+          address = 0;
+          lineNumber = 1;
+          std::cout << "End of Sequence" << std::endl;
           break;
         }
         case (ExtendedOpCode::DW_LNE_set_address): {
           uint64_t const newAddress = byteReader.getNumber<uint32_t>(); // Only works for 32bit machine
           address = static_cast<int32_t>(newAddress);
+          std::cout << "set address to " << std::hex << address;
           break;
         }
           throw std::runtime_error("not implemented yet");
@@ -289,7 +306,7 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
         int32_t const newAddress = address + addressIncrement;
         int32_t const newLineNumber = lineNumber + lineIncrement;
 
-        std::cout << "increase address by " << addressIncrement << " to " << newAddress << " and Line by " << lineIncrement << " to " << newLineNumber;
+        std::cout << "increase address by " << addressIncrement << " to 0x" << std::hex << newAddress << " and Line by " << std::dec << lineIncrement << " to " << newLineNumber;
         address = newAddress;
         lineNumber = newLineNumber;
       }
