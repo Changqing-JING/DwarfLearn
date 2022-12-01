@@ -152,6 +152,7 @@ enum class ExtendedOpCode : uint8_t {
   DW_LNE_end_sequence = 1U,
   DW_LNE_set_address = 2U,
   DW_LNE_define_file = 3U,
+  DW_LNE_set_discriminator = 4U,
 };
 
 void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr> const &debugLines) {
@@ -301,14 +302,13 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
           throw std::runtime_error("not implemented yet");
         }
         }
-      } else { // special opcode
+      } else { // extended opcode
         uint64_t const commandLength = byteReader.readLEB128(false);
         static_cast<void>(commandLength);
         uint8_t const subOpcode = byteReader.getNumber<uint8_t>();
         ExtendedOpCode const extendedOpCode = static_cast<ExtendedOpCode>(subOpcode);
         std::cout << "Extended opcode " << static_cast<uint32_t>(subOpcode) << ": ";
         switch (extendedOpCode) {
-        default: {
         case (ExtendedOpCode::DW_LNE_end_sequence): {
           address = 0;
           lineNumber = 1;
@@ -322,6 +322,12 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
           std::cout << "set address to " << std::hex << address;
           break;
         }
+        case (ExtendedOpCode::DW_LNE_set_discriminator): {
+          uint64_t const discriminator = byteReader.readLEB128(false);
+          static_cast<void>(discriminator);
+          break;
+        }
+        default: {
           throw std::runtime_error("not implemented yet");
         }
         }
