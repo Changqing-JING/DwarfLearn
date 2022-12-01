@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <elf.h>
 #include <fstream>
 #include <ios>
 #include <iostream>
@@ -11,6 +10,7 @@
 #include <stdexcept>
 #include <sys/types.h>
 #include <vector>
+#include "elf.h"
 
 std::vector<uint8_t> readFile(const char *const filename) {
   // open the file:
@@ -371,19 +371,7 @@ int main(int argc, char *argv[]) {
 
   Elf32_Shdr const *const sectionHeaderStart = reinterpret_cast<Elf32_Shdr const *>(fileBytes.data() + sectionHeaderOffset);
 
-  Elf32_Shdr const *stringTable = nullptr;
-
-  for (uint32_t i = 0; i < numberOfSectionHeaders; i++) {
-    Elf32_Shdr const *const currentHeader = sectionHeaderStart + i;
-    if (currentHeader->sh_type == SHT_STRTAB) {
-      stringTable = currentHeader;
-      break;
-    }
-  }
-
-  if (stringTable == nullptr) {
-    throw std::runtime_error("string table not found");
-  }
+  Elf32_Shdr const *stringTable = sectionHeaderStart + elf32Header->e_shstrndx;
 
   std::vector<Elf32_Shdr> debugLines;
 
