@@ -1,5 +1,6 @@
 #include <array>
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <elf.h>
@@ -203,22 +204,22 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
       std::cout << includeDir << std::endl;
     }
 
-    std::vector<std::string> file_names;
+    std::vector<std::string> fileNameTable;
 
     std::cout << "file names:" << std::endl;
     do {
       std::string fileName = byteReader.getString();
 
       if (!fileName.empty()) {
-        uint64_t const index = byteReader.readLEB128(false);
+        uint64_t const dirIndex = byteReader.readLEB128(false);
 
         uint64_t const modifyTime = byteReader.readLEB128(false);
 
         uint64_t const fileSize = byteReader.readLEB128(false);
 
-        std::cout << index << " " << modifyTime << " " << fileSize << " " << fileName << std::endl;
+        std::cout << dirIndex << " " << modifyTime << " " << fileSize << " " << fileName << std::endl;
 
-        file_names.push_back(std::move(fileName));
+        fileNameTable.push_back(std::move(fileName));
       } else {
         break;
       }
@@ -244,7 +245,7 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
         StandardOpCode const standardOpcode = static_cast<StandardOpCode>(opCode);
         switch (standardOpcode) {
         case (StandardOpCode::DW_LNS_copy): {
-          // fixme
+          // The opcode is not needed in current example, skip it
           break;
         }
         case (StandardOpCode::DW_LNS_advance_pc): {
@@ -257,12 +258,24 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
           lineIncrement = static_cast<int32_t>(operand);
           break;
         }
+        case (StandardOpCode::DW_LNS_set_file): {
+          uint64_t const fileId = byteReader.readLEB128(false);
+          // The index of file name table begin with 1, not 0. So the 1st in table is the 0st element in vector.
+          uint64_t const vectorIndex = fileId - 1U;
+          assert(vectorIndex < fileNameTable.size());
+          std::cout << "Set File Name to entry " << (fileId) << " in the File Name Table: " << fileNameTable[vectorIndex];
+          break;
+        }
         case (StandardOpCode::DW_LNS_set_column): {
           if (opCodeArgumentLength != 1U) {
             throw std::runtime_error("opCodeArgumentLength mismatch");
           }
           uint64_t const column = byteReader.readLEB128(false);
           std::cout << "set column " << column;
+          break;
+        }
+        case (StandardOpCode::DW_LNS_negate_stmt): {
+          // The opcode is not needed in current example, skip it
           break;
         }
         case (StandardOpCode::DW_LNS_const_add_pc): {

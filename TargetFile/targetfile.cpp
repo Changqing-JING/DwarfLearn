@@ -8,9 +8,9 @@ public:
 #endif
       void
       foo() {
-    // std::vector<int> v1;
+    std::vector<int> v1;
     while (i < 1000) {
-      // v1.push_back(i);
+      v1.push_back(i);
       i++;
     }
 
