@@ -228,6 +228,8 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
 
     int32_t address = 0;
     int32_t lineNumber = 1;
+    uint64_t file = 1U;
+    std::cout << "start with file " << file << " " << fileNameTable[file - 1] << std::endl;
     while (!byteReader.reachedEnd()) {
       uint8_t const opCode = byteReader.getNumber<uint8_t>();
 
@@ -240,7 +242,7 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
         lineIncrement = static_cast<int32_t>(line_base) + static_cast<int32_t>((opCode - opcode_base) % line_range);
       } else if (opCode > 0U) { // standard opcode
         std::cout << "standard opcode " << static_cast<uint32_t>(opCode) << ": ";
-        assert(opCode < standard_opcode_lengths.size());
+        assert(opCode <= standard_opcode_lengths.size());
         uint8_t const opCodeArgumentLength = standard_opcode_lengths[opCode - 1U];
         StandardOpCode const standardOpcode = static_cast<StandardOpCode>(opCode);
         switch (standardOpcode) {
@@ -259,11 +261,11 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
           break;
         }
         case (StandardOpCode::DW_LNS_set_file): {
-          uint64_t const fileId = byteReader.readLEB128(false);
+          file = byteReader.readLEB128(false);
           // The index of file name table begin with 1, not 0. So the 1st in table is the 0st element in vector.
-          uint64_t const vectorIndex = fileId - 1U;
+          uint64_t const vectorIndex = file - 1U;
           assert(vectorIndex < fileNameTable.size());
-          std::cout << "Set File Name to entry " << (fileId) << " in the File Name Table: " << fileNameTable[vectorIndex];
+          std::cout << "Set File Name to entry " << (file) << " in the File Name Table: " << fileNameTable[vectorIndex];
           break;
         }
         case (StandardOpCode::DW_LNS_set_column): {
@@ -278,8 +280,17 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
           // The opcode is not needed in current example, skip it
           break;
         }
+        case (StandardOpCode::DW_LNS_set_basic_block): {
+          // The opcode is not needed in current example, skip it
+          break;
+        }
         case (StandardOpCode::DW_LNS_const_add_pc): {
           addressIncrement = static_cast<int32_t>(((255U - opcode_base) / line_range) * minimum_instruction_length);
+          break;
+        }
+        case (StandardOpCode::DW_LNS_fixed_advance_pc): {
+          uint16_t const operand = byteReader.getNumber<uint16_t>();
+          addressIncrement = operand;
           break;
         }
         case (StandardOpCode::DW_LNS_set_epilogue_begin): {
@@ -301,6 +312,7 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
         case (ExtendedOpCode::DW_LNE_end_sequence): {
           address = 0;
           lineNumber = 1;
+          file = 1;
           std::cout << "End of Sequence" << std::endl;
           break;
         }
@@ -359,16 +371,23 @@ int main(int argc, char *argv[]) {
 
   Elf32_Shdr const *const sectionHeaderStart = reinterpret_cast<Elf32_Shdr const *>(fileBytes.data() + sectionHeaderOffset);
 
-  Elf32_Shdr const *const stringTable = sectionHeaderStart + numberOfSectionHeaders - 1U;
+  Elf32_Shdr const *stringTable = nullptr;
 
-  if (stringTable->sh_type != SHT_STRTAB) {
-    printf("string table not found\n");
-    exit(1);
+  for (uint32_t i = 0; i < numberOfSectionHeaders; i++) {
+    Elf32_Shdr const *const currentHeader = sectionHeaderStart + i;
+    if (currentHeader->sh_type == SHT_STRTAB) {
+      stringTable = currentHeader;
+      break;
+    }
+  }
+
+  if (stringTable == nullptr) {
+    throw std::runtime_error("string table not found");
   }
 
   std::vector<Elf32_Shdr> debugLines;
 
-  const char *stringContentStart = reinterpret_cast<const char *>(fileBytes.data() + stringTable->sh_offset);
+  const char *const stringContentStart = reinterpret_cast<const char *>(fileBytes.data() + stringTable->sh_offset);
 
   for (uint32_t i = 0; i < numberOfSectionHeaders; i++) {
     Elf32_Shdr const *const currentHeader = sectionHeaderStart + i;
@@ -377,7 +396,7 @@ int main(int argc, char *argv[]) {
     if (strncmp(sectionName, debugLineName.data(), debugLineName.size()) == 0) {
       debugLines.push_back(*currentHeader);
     }
-    // printf("%s, offset %x, size %x\n",sectionName, currentHeader->sh_offset, currentHeader->sh_size);
+    // printf("%s, offset %x, size %x\n", sectionName, currentHeader->sh_offset, currentHeader->sh_size);
   }
 
   parseDebugLine(fileBytes, debugLines);
