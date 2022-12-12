@@ -7,10 +7,14 @@
 #include <ios>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <stdexcept>
 #include <sys/types.h>
+#include <unordered_map>
 #include <vector>
 #include "elf.h"
+
+std::unordered_map<uint32_t, uint32_t> debugLineTextMap; // key is section index of debug line, value is section index of text
 
 std::vector<uint8_t> readFile(const char *const filename) {
   // open the file:
@@ -155,8 +159,9 @@ enum class ExtendedOpCode : uint8_t {
   DW_LNE_set_discriminator = 4U,
 };
 
-void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr> const &debugLines) {
-  for (Elf32_Shdr const &hdr : debugLines) {
+void parseDebugLine(std::vector<uint8_t> const &elfFile, std::map<uint32_t, Elf32_Shdr> const &debugLines) {
+  for (std::pair<const unsigned int, Elf32_Shdr> const &pair : debugLines) {
+    const Elf32_Shdr &hdr = pair.second;
     const uint8_t *const debugLineSectionData = elfFile.data() + hdr.sh_offset;
     ByteReader byteReader(debugLineSectionData, hdr.sh_size);
     uint32_t const unit_length = byteReader.getNumber<uint32_t>();
@@ -347,6 +352,8 @@ void parseDebugLine(std::vector<uint8_t> const &elfFile, std::vector<Elf32_Shdr>
   }
 }
 
+std::array<char, 12> const debugLineName = {".debug_line"};
+
 int main(int argc, char *argv[]) {
 
   if (argc < 2) {
@@ -379,18 +386,55 @@ int main(int argc, char *argv[]) {
 
   Elf32_Shdr const *stringTable = sectionHeaderStart + elf32Header->e_shstrndx;
 
-  std::vector<Elf32_Shdr> debugLines;
+  std::map<uint32_t, Elf32_Shdr> debugLines; // key is section index, value is section header
 
   const char *const stringContentStart = reinterpret_cast<const char *>(fileBytes.data() + stringTable->sh_offset);
 
   for (uint32_t i = 0; i < numberOfSectionHeaders; i++) {
     Elf32_Shdr const *const currentHeader = sectionHeaderStart + i;
-    const char *const sectionName = stringContentStart + currentHeader->sh_name;
-    std::array<char, 12> const debugLineName = {".debug_line"};
-    if (strncmp(sectionName, debugLineName.data(), debugLineName.size()) == 0) {
-      debugLines.push_back(*currentHeader);
+
+    if (currentHeader->sh_type == SHT_GROUP) {
+
+      uint32_t const *const groupSection = reinterpret_cast<const uint32_t *>(fileBytes.data() + currentHeader->sh_offset);
+
+      uint32_t textSectionIndex = UINT32_MAX;
+      uint32_t debugLineSectionIndex = UINT32_MAX;
+      for (uint32_t j = 1U; j < currentHeader->sh_size / sizeof(uint32_t); j++) {
+        uint32_t const groupMemberIndex = groupSection[j];
+        Elf32_Shdr const *const groupMemberSection = sectionHeaderStart + groupMemberIndex;
+        const char *const sectionName = stringContentStart + groupMemberSection->sh_name;
+        if (strncmp(sectionName, ".text", 5U) == 0) {
+          if (textSectionIndex == UINT32_MAX) {
+            textSectionIndex = groupMemberIndex;
+          } else {
+            throw std::runtime_error("two .text in group");
+          }
+
+        } else if (strncmp(sectionName, debugLineName.data(), debugLineName.size()) == 0) {
+          if (debugLineSectionIndex == UINT32_MAX) {
+            debugLineSectionIndex = groupMemberIndex;
+          } else {
+            throw std::runtime_error("two .debugline in group");
+          }
+        }
+      }
+
+      if ((debugLineSectionIndex != UINT32_MAX) && (textSectionIndex == UINT32_MAX)) {
+        throw std::runtime_error("debug_line section without code section");
+      } else if ((debugLineSectionIndex != UINT32_MAX) && (textSectionIndex != UINT32_MAX)) {
+        printf("text section %d map to debug_line %d\n", textSectionIndex, debugLineSectionIndex);
+        debugLineTextMap[debugLineSectionIndex] = textSectionIndex;
+      }
     }
-    // printf("%s, offset %x, size %x\n", sectionName, currentHeader->sh_offset, currentHeader->sh_size);
+  }
+
+  for (uint32_t i = 0; i < numberOfSectionHeaders; i++) {
+    Elf32_Shdr const *const currentHeader = sectionHeaderStart + i;
+    const char *const sectionName = stringContentStart + currentHeader->sh_name;
+
+    if (strncmp(sectionName, debugLineName.data(), debugLineName.size()) == 0) {
+      debugLines[i] = (*currentHeader);
+    }
   }
 
   parseDebugLine(fileBytes, debugLines);
