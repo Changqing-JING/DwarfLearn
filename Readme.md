@@ -28,3 +28,9 @@ cmake --build .
 ```
 build_win\Debug\ELFLearn.exe path_to_elf_file
 ```
+
+## Readelf commands
+Read .debug_info
+```shell
+readelf --debug-dump=info ./build/TargetFile/CMakeFiles/TargetFile.dir/targetfile.cpp.o
+```
