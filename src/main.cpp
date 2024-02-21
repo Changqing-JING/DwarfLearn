@@ -85,75 +85,20 @@ int main(int argc, char *argv[]) {
 
   const char *const stringContentStart = reinterpret_cast<const char *>(fileBytes.data() + stringTable->sh_offset);
 
-  for (uint32_t i = 0; i < numberOfSectionHeaders; i++) {
-    Elf32_Shdr const *const currentHeader = sectionHeaderStart + i;
-
-    switch (currentHeader->sh_type) {
-
-    case (SHT_GROUP): {
-
-      uint32_t const *const groupSection = reinterpret_cast<const uint32_t *>(fileBytes.data() + currentHeader->sh_offset);
-
-      uint32_t textSectionIndex = UINT32_MAX;
-      uint32_t debugLineSectionIndex = UINT32_MAX;
-      for (uint32_t j = 1U; j < currentHeader->sh_size / sizeof(uint32_t); j++) {
-        uint32_t const groupMemberIndex = groupSection[j];
-        Elf32_Shdr const *const groupMemberSection = sectionHeaderStart + groupMemberIndex;
-        const char *const sectionName = stringContentStart + groupMemberSection->sh_name;
-        if (strncmp(sectionName, ".text", 5U) == 0) {
-          if (textSectionIndex == UINT32_MAX) {
-            textSectionIndex = groupMemberIndex;
-          } else {
-            throw std::runtime_error("two .text in group");
-          }
-
-        } else if (strncmp(sectionName, debugLineName.data(), debugLineName.size()) == 0) {
-          if (debugLineSectionIndex == UINT32_MAX) {
-            debugLineSectionIndex = groupMemberIndex;
-          } else {
-            throw std::runtime_error("two .debugline in group");
-          }
-        }
-      }
-
-      if ((debugLineSectionIndex != UINT32_MAX) && (textSectionIndex == UINT32_MAX)) {
-        throw std::runtime_error("debug_line section without code section");
-      } else if ((debugLineSectionIndex != UINT32_MAX) && (textSectionIndex != UINT32_MAX)) {
-        printf("text section %d map to debug_line %d\n", textSectionIndex, debugLineSectionIndex);
-        debugLineTextMap[debugLineSectionIndex] = textSectionIndex;
-      }
-      break;
-    }
-    default: {
-      break;
-    }
-    }
-  }
-
-  Elf32_Shdr const *debugInfoSection;
-  Elf32_Shdr const *debugAbbrevSection;
-  const char *debugStrSection;
+  std::array<uint32_t, 3> protectedAddrList = {0xA00F0000, 0x800F0000, 0x81400000};
 
   for (uint32_t i = 0; i < numberOfSectionHeaders; i++) {
     Elf32_Shdr const *const currentHeader = sectionHeaderStart + i;
     const char *const sectionName = stringContentStart + currentHeader->sh_name;
 
-    if (strncmp(sectionName, debugLineName.data(), debugLineName.size()) == 0) {
-      debugLines[i] = (*currentHeader);
-    } else if (strncmp(sectionName, debugInfoName.data(), debugInfoName.size()) == 0) {
-      debugInfoSection = currentHeader;
-    } else if (strncmp(sectionName, debugAbbrevName.data(), debugAbbrevName.size()) == 0) {
-      debugAbbrevSection = currentHeader;
-    } else if (strncmp(sectionName, debugStrName.data(), debugStrName.size()) == 0) {
-      debugStrSection = reinterpret_cast<const char *>(fileBytes.data() + currentHeader->sh_offset);
+    for (uint32_t const protectedAddr : protectedAddrList) {
+      uint32_t const sectionStartAddr = currentHeader->sh_addr;
+      uint32_t const sectionEndAddr = sectionStartAddr + currentHeader->sh_size;
+      if ((sectionStartAddr <= protectedAddr) && (sectionEndAddr >= protectedAddr)) {
+        printf("%s, %x, %d\n", sectionName, sectionStartAddr, currentHeader->sh_size);
+      }
     }
   }
-
-  DebugLine::parseDebugLine(fileBytes, debugLines);
-
-  std::unordered_map<uint64_t, DebugAbbrev::AbbrevEntry> const debugAbbrev = DebugAbbrev::parseDebugAbbrev(fileBytes, debugAbbrevSection);
-
-  DebugInfo::parseDebugInfo(fileBytes, debugInfoSection, debugAbbrev, debugStrSection);
 
   return 0;
 }
