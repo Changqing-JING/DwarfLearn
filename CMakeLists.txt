@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 
 project(ELFLearn)
+set(CMAKE_CXX_STANDARD 20)
 
 if(MSVC)
 add_compile_options(/W4 /MP)

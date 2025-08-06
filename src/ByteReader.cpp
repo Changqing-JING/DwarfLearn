@@ -1,6 +1,6 @@
 #include "ByteReader.hpp"
 
-ByteReader::ByteReader(uint8_t const *const start, size_t size) : cursor_(start), end_(start + size) {
+ByteReader::ByteReader(uint8_t const *const start, size_t size) : start_(start), cursor_(start), end_(start + size) {
 }
 
 const std::vector<uint8_t> ByteReader::getArray(uint32_t const length) {

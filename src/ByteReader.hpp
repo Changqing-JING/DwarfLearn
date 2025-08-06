@@ -28,6 +28,10 @@ public:
     return num;
   }
 
+  inline void step(size_t const bytes) noexcept {
+    cursor_ += bytes;
+  }
+
   const std::vector<uint8_t> getArray(uint32_t const length);
 
   std::string const getString();
@@ -40,6 +44,11 @@ public:
     return cursor_ == end_;
   }
 
+  inline ptrdiff_t getOffset() const noexcept {
+    return static_cast<ptrdiff_t>(cursor_ - start_);
+  }
+
+  uint8_t const *start_;
   uint8_t const *cursor_;
   uint8_t const *end_;
 };

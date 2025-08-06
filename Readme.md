@@ -34,3 +34,6 @@ Read .debug_info
 ```shell
 readelf --debug-dump=info ./build/TargetFile/CMakeFiles/TargetFile.dir/targetfile.cpp.o
 ```
+
+## Docs
+[Dwarf GNU extension](https://sourceware.org/elfutils/DwarfExtensions)

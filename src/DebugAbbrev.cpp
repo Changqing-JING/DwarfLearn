@@ -1,53 +1,4 @@
 #include "DebugAbbrev.hpp"
-#include <cassert>
-#include <iostream>
-#include <stdexcept>
-#include "ByteReader.hpp"
-
-const std::unordered_map<uint64_t, DebugAbbrev::AbbrevEntry> DebugAbbrev::parseDebugAbbrev(std::vector<uint8_t> const &elfFile, Elf32_Shdr const *const debugAbbrevSection) {
-  uint8_t const *const debugAbbrevData = elfFile.data() + debugAbbrevSection->sh_offset;
-  ByteReader debugAbbrevReader(debugAbbrevData, debugAbbrevSection->sh_size);
-
-  std::unordered_map<uint64_t, AbbrevEntry> abbrevTable;
-
-  while (true) {
-    uint64_t const index = debugAbbrevReader.readLEB128(false);
-
-    if (index != 0) {
-      assert(abbrevTable.count(index) == 0 && "duplicate Abbrev index");
-
-      AbbrevEntry &abbrevEntry = abbrevTable[index];
-
-      uint64_t const entryTag = debugAbbrevReader.readLEB128(false);
-      abbrevEntry.tag = static_cast<Tag>(entryTag);
-
-      uint8_t const hasChild = debugAbbrevReader.getNumber<uint8_t>();
-
-      if (hasChild == DW_CHILDREN_yes) {
-        abbrevEntry.hasChildren = true;
-      } else if (hasChild == DW_CHILDREN_no) {
-        abbrevEntry.hasChildren = false;
-      } else {
-        throw std::runtime_error("unknown hasChild");
-      }
-
-      while (true) {
-        uint64_t const attributeName = debugAbbrevReader.readLEB128(false);
-        uint64_t const form = debugAbbrevReader.readLEB128(false);
-
-        if (!((attributeName == 0) && (form == 0))) {
-          abbrevEntry.attributeSpecifications.emplace_back(AttributeSpecification{static_cast<AttributeName>(attributeName), static_cast<Form>(form)});
-        } else {
-          break;
-        }
-      }
-    } else {
-      assert(debugAbbrevReader.reachedEnd());
-      break;
-    }
-  }
-  return abbrevTable;
-}
 
 const std::string DebugAbbrev::attributeNameToString(AttributeName const attributeName) {
   switch (attributeName) {
@@ -261,8 +212,14 @@ const std::string DebugAbbrev::attributeNameToString(AttributeName const attribu
   case (AttributeName::DW_AT_MIPS_linkage_name): {
     return "DW_AT_MIPS_linkage_name";
   }
+  case (AttributeName::DW_AT_GNU_call_site_value): {
+    return "DW_AT_GNU_call_site_value";
+  }
   case (AttributeName::DW_AT_GNU_all_call_sites): {
     return "DW_AT_GNU_all_call_sites";
+  }
+  case (AttributeName::DW_AT_GNU_locviews): {
+    return "DW_AT_GNU_locviews";
   }
   case (AttributeName::DW_AT_hi_user): {
     return "DW_AT_hi_user";
@@ -450,6 +407,12 @@ const std::string DebugAbbrev::tagToString(Tag const tag) {
   case (Tag::DW_TAG_lo_user): {
     return "DW_TAG_lo_user";
   }
+  case (Tag::DW_TAG_GNU_call_site): {
+    return "DW_TAG_GNU_call_site";
+  }
+  case (Tag::DW_TAG_GNU_call_site_parameter): {
+    return "DW_TAG_GNU_call_site_parameter";
+  }
   case (Tag::DW_TAG_hi_user): {
     return "DW_TAG_hi_user";
   }
@@ -457,4 +420,45 @@ const std::string DebugAbbrev::tagToString(Tag const tag) {
     throw std::runtime_error("unknown tag");
   }
   }
+}
+
+DebugAbbrev::AbbrevTable DebugAbbrev::parseAbbrevTable(ByteReader &debugAbbrevReader) {
+  AbbrevTable abbrevTable;
+
+  while (true) {
+    uint64_t const index = debugAbbrevReader.readLEB128(false);
+
+    if (index != 0) {
+      assert(abbrevTable.count(index) == 0 && "duplicate Abbrev index");
+
+      AbbrevEntry &abbrevEntry = abbrevTable[index];
+
+      uint64_t const entryTag = debugAbbrevReader.readLEB128(false);
+      abbrevEntry.tag = static_cast<Tag>(entryTag);
+
+      uint8_t const hasChild = debugAbbrevReader.getNumber<uint8_t>();
+
+      if (hasChild == DW_CHILDREN_yes) {
+        abbrevEntry.hasChildren = true;
+      } else if (hasChild == DW_CHILDREN_no) {
+        abbrevEntry.hasChildren = false;
+      } else {
+        throw std::runtime_error("unknown hasChild");
+      }
+
+      while (true) {
+        uint64_t const attributeName = debugAbbrevReader.readLEB128(false);
+        uint64_t const form = debugAbbrevReader.readLEB128(false);
+
+        if (!((attributeName == 0) && (form == 0))) {
+          abbrevEntry.attributeSpecifications.emplace_back(AttributeSpecification{static_cast<AttributeName>(attributeName), static_cast<Form>(form)});
+        } else {
+          break;
+        }
+      }
+    } else {
+      break;
+    }
+  }
+  return abbrevTable;
 }

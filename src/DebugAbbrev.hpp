@@ -1,9 +1,12 @@
 #ifndef DEBUG_ABBREV_HPP
 #define DEBUG_ABBREV_HPP
+#include <cassert>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "ByteReader.hpp"
 #include "elf.h"
 
 class DebugAbbrev {
@@ -83,7 +86,9 @@ public:
     DW_AT_recursive = 0x68,
     DW_AT_lo_user = 0x2000,
     DW_AT_MIPS_linkage_name = 0x2007,
+    DW_AT_GNU_call_site_value = 0x2111,
     DW_AT_GNU_all_call_sites = 0x2117,
+    DW_AT_GNU_locviews = 0x2137,
     DW_AT_hi_user = 0x3fff,
 
   };
@@ -176,6 +181,8 @@ public:
     DW_TAG_condition = 0x3f,
     DW_TAG_shared_type = 0x40,
     DW_TAG_lo_user = 0x4080,
+    DW_TAG_GNU_call_site = 0x4109,
+    DW_TAG_GNU_call_site_parameter = 0x410a,
     DW_TAG_hi_user = 0xffff
   };
 
@@ -185,10 +192,26 @@ public:
     std::vector<AttributeSpecification> attributeSpecifications;
   };
 
+  using AbbrevTable = std::unordered_map<uint64_t, AbbrevEntry>;
+
   static const std::string attributeNameToString(AttributeName const attributeName);
   static const std::string tagToString(Tag const tag);
 
-  static const std::unordered_map<uint64_t, AbbrevEntry> parseDebugAbbrev(std::vector<uint8_t> const &elfFile, Elf32_Shdr const *const debugAbbrevSection);
+  // Template function to support both ELF32 and ELF64
+  template <typename ShdrType>
+  static const std::unordered_map<ptrdiff_t, AbbrevTable> parseDebugAbbrev(std::vector<uint8_t> const &elfFile, const ShdrType *const debugAbbrevSection) {
+    uint8_t const *const debugAbbrevData = elfFile.data() + debugAbbrevSection->sh_offset;
+    ByteReader debugAbbrevReader(debugAbbrevData, static_cast<size_t>(debugAbbrevSection->sh_size));
+    std::unordered_map<ptrdiff_t, AbbrevTable> abbrevSection;
+    while (!debugAbbrevReader.reachedEnd()) {
+      ptrdiff_t const offset = debugAbbrevReader.getOffset();
+      AbbrevTable abbrevTable = parseAbbrevTable(debugAbbrevReader);
+      abbrevSection[offset] = std::move(abbrevTable);
+    }
+    return abbrevSection;
+  }
+
+  static AbbrevTable parseAbbrevTable(ByteReader &debugAbbrevReader);
 };
 
 #endif
