@@ -25,16 +25,25 @@ Tree<uint32_t> DebugInfo::parseDebugInfoTree(ByteReader &debugInfoReader, std::u
 
   Tree<uint32_t> debugInfoTree;
   std::vector<TreeNode<uint32_t> *> treeNodeStack;
+  std::unordered_map<uint32_t, DIEInfo> dieStorage; // Store DIE information for type resolution
 
   uint32_t debugInfoIndex = 0;
 
   while (debugInfoReader.cursor_ - start < unitLength) {
+    // Store the offset before reading the abbrev index, as DWARF references point here
+    uint32_t const dieStartOffset = static_cast<uint32_t>(debugInfoReader.getOffset());
+
     uint64_t const abbrevIndex = debugInfoReader.readLEB128(false);
     if (abbrevIndex != 0) {
 
       std::unordered_map<uint64_t, DebugAbbrev::AbbrevEntry>::const_iterator it = debugAbbrevTable.find(abbrevIndex);
       assert(it != debugAbbrevTable.end() && "abbrevIndex not found in debugAbbrevTable");
       DebugAbbrev::AbbrevEntry const &abbrevEntry = it->second;
+
+      DIEInfo currentDIE;
+      currentDIE.offset = dieStartOffset;
+      currentDIE.tag = abbrevEntry.tag;
+
       std::cout << std::hex << "0x" << debugInfoReader.getOffset() << std::dec << ": section abbrevIndex " << abbrevIndex << "------------------" << std::endl;
       std::cout << "abbrev tag " << DebugAbbrev::tagToString(abbrevEntry.tag) << std::endl;
       for (DebugAbbrev::AttributeSpecification const &attributeSpec : abbrevEntry.attributeSpecifications) {
@@ -46,11 +55,19 @@ Tree<uint32_t> DebugInfo::parseDebugInfoTree(ByteReader &debugInfoReader, std::u
           uint32_t const offset = debugInfoReader.getNumber<uint32_t>();
           char const *const indirectStr = debugStr + offset;
           formStr = indirectStr;
+          // Store name for type resolution
+          if (attributeSpec.attributeName == DebugAbbrev::AttributeName::DW_AT_name) {
+            currentDIE.name = indirectStr;
+          }
           break;
         }
         case (DebugAbbrev::Form::DW_FORM_string): {
           const std::string str = debugInfoReader.getString();
           formStr = str;
+          // Store name for type resolution
+          if (attributeSpec.attributeName == DebugAbbrev::AttributeName::DW_AT_name) {
+            currentDIE.name = str;
+          }
           break;
         }
         case (DebugAbbrev::Form::DW_FORM_data1): {
@@ -103,6 +120,13 @@ Tree<uint32_t> DebugInfo::parseDebugInfoTree(ByteReader &debugInfoReader, std::u
         case (DebugAbbrev::Form::DW_FORM_ref4): {
           uint32_t const reference = debugInfoReader.getNumber<uint32_t>();
           formStr = numToHexString(reference);
+          // Special handling for DW_AT_type: resolve to type name
+          if (attributeSpec.attributeName == DebugAbbrev::AttributeName::DW_AT_type) {
+            std::string typeName = resolveTypeName(reference, dieStorage);
+            if (!typeName.empty()) {
+              formStr += " (" + typeName + ")";
+            }
+          }
           break;
         }
         case (DebugAbbrev::Form::DW_FORM_block1):
@@ -135,6 +159,9 @@ Tree<uint32_t> DebugInfo::parseDebugInfoTree(ByteReader &debugInfoReader, std::u
         std::cout << formStr << std::endl;
       }
 
+      // Store the DIE information for later type resolution
+      dieStorage[dieStartOffset] = currentDIE;
+
       if (debugInfoTree.hasRoot()) {
         TreeNode<uint32_t> *const currentParent = treeNodeStack.back();
         TreeNode<uint32_t> &child = currentParent->addChild(debugInfoIndex);
@@ -156,4 +183,44 @@ Tree<uint32_t> DebugInfo::parseDebugInfoTree(ByteReader &debugInfoReader, std::u
   }
 
   return debugInfoTree;
+}
+
+std::string DebugInfo::resolveTypeName(uint32_t typeOffset, const std::unordered_map<uint32_t, DIEInfo> &dieStorage) {
+  auto it = dieStorage.find(typeOffset);
+  if (it != dieStorage.end()) {
+    const DIEInfo &typeInfo = it->second;
+
+    // For base types and typedef, return the name directly
+    if (typeInfo.tag == DebugAbbrev::Tag::DW_TAG_base_type || typeInfo.tag == DebugAbbrev::Tag::DW_TAG_typedef) {
+      return typeInfo.name;
+    }
+
+    // For pointer types, we might want to show "pointer to <type>"
+    if (typeInfo.tag == DebugAbbrev::Tag::DW_TAG_pointer_type) {
+      // This could be enhanced to follow the pointer's type reference
+      return "pointer";
+    }
+
+    // For const types
+    if (typeInfo.tag == DebugAbbrev::Tag::DW_TAG_const_type) {
+      return "const";
+    }
+
+    // For structure/class types
+    if (typeInfo.tag == DebugAbbrev::Tag::DW_TAG_structure_type || typeInfo.tag == DebugAbbrev::Tag::DW_TAG_class_type) {
+      return typeInfo.name.empty() ? "struct" : typeInfo.name;
+    }
+
+    // For array types
+    if (typeInfo.tag == DebugAbbrev::Tag::DW_TAG_array_type) {
+      return "array";
+    }
+
+    // Return the name if available, otherwise the tag type
+    if (!typeInfo.name.empty()) {
+      return typeInfo.name;
+    }
+  }
+
+  return ""; // Type not found or not resolved
 }

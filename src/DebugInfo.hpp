@@ -16,6 +16,13 @@
 #include "elf.h"
 
 class DebugInfo {
+public:
+  struct DIEInfo {
+    uint32_t offset;
+    DebugAbbrev::Tag tag;
+    std::string name;
+    std::string typeName; // For base types, this stores the type name
+  };
 
 public:
   // Template function to support both ELF32 and ELF64
@@ -50,6 +57,8 @@ public:
 
   static Tree<uint32_t> parseDebugInfoTree(ByteReader &debugInfoReader, std::unordered_map<ptrdiff_t, DebugAbbrev::AbbrevTable> const &debugAbbrevSections, char const *const debugStr,
                                            uint32_t const unitLength, bool const is32, DebugLoc const &debugLoc);
+
+  static std::string resolveTypeName(uint32_t typeOffset, const std::unordered_map<uint32_t, DIEInfo> &dieStorage);
 
 private:
 };

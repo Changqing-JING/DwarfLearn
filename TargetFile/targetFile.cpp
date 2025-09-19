@@ -1,7 +1,12 @@
 
-
+struct ST {
+  int x;
+  int y;
+};
 int goo() {
-  int a = 1;
+  ST st;
+  st.x = 10;
+  int a = st.x;
   int b = 2;
   int c = a + b;
   return c;
