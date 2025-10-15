@@ -9,3 +9,7 @@ set_target_properties(TargetFile PROPERTIES COMPILE_FLAGS "-gdwarf-3 -m32 -ffunc
 add_executable(TargetFileWithOptimize  targetWithOptimize.cpp foo.cpp)
 
 set_target_properties(TargetFileWithOptimize PROPERTIES COMPILE_FLAGS "-gdwarf-3 -ffunction-sections -O2")
+
+add_library(ClassInherit OBJECT ClassInherit.cpp)
+
+set_target_properties(ClassInherit PROPERTIES COMPILE_FLAGS "-gdwarf-3 -ffunction-sections")
