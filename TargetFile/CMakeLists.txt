@@ -13,3 +13,7 @@ set_target_properties(TargetFileWithOptimize PROPERTIES COMPILE_FLAGS "-gdwarf-3
 add_library(ClassInherit OBJECT ClassInherit.cpp)
 
 set_target_properties(ClassInherit PROPERTIES COMPILE_FLAGS "-gdwarf-3 -ffunction-sections")
+
+add_executable(functions functions.cpp)
+
+set_target_properties(functions PROPERTIES COMPILE_FLAGS "-gdwarf-3 -ffunction-sections")
