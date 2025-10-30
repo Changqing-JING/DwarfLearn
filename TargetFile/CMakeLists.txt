@@ -17,3 +17,7 @@ set_target_properties(ClassInherit PROPERTIES COMPILE_FLAGS "-gdwarf-3 -ffunctio
 add_executable(functions functions.cpp)
 
 set_target_properties(functions PROPERTIES COMPILE_FLAGS "-gdwarf-3 -ffunction-sections")
+
+add_executable(variableScope variableScope.cpp)
+
+set_target_properties(variableScope PROPERTIES COMPILE_FLAGS "-gdwarf-3 -ffunction-sections")
