@@ -25,3 +25,7 @@ set_target_properties(variableScope PROPERTIES COMPILE_FLAGS "-gdwarf-3 -ffuncti
 add_executable(templateType templateType.cpp)
 
 set_target_properties(templateType PROPERTIES COMPILE_FLAGS "-gdwarf-3 -ffunction-sections")
+
+add_executable(tupleType tupleType.cpp)
+
+set_target_properties(tupleType PROPERTIES COMPILE_FLAGS "-gdwarf-3 -ffunction-sections")
